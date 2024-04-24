@@ -1,0 +1,28 @@
+Code:
+- Label smoothing (LS et T-LS)
+   - LS : label smoothing basique
+   - T-LS: combiner avec les vrais labels, commencer l'entrainement avec les valeurs smoothés (LS) ensuite après X instances d'entraînement,
+   utiliser un entraînement normal avec les vérités de terrain. 
+- Weakly supervised label smoothing
+- Negative sampling + BM-25 / Negative sampling + random
+- Bert pré entrainé
+
+Expérimentations:
+- Avant de commencer tous les tests, tester après combien X instances d'entraînement (tester différentes valeurs de K: nombres instances d'entraînement)
+- Tester sur différents datasets, voir si sur certains domaines ça fonctionne moins
+- Tester avec différentes loss pour voir si la leur aka cross-entropy c'est vraiment la meilleure (faire des tests de SIGNIFICATIVITÉ).
+- Ajuster les différents hyper-paramètres (par exemple le nombre de candidats à prendre à BM-25 parce que la sous-collection qu'on donne au re-rank peut affecter les performances).
+- Recall, précision à plusieurs rangs, MRR reciprocal rank pour voir où est le document pertinent (quel rang).
+- Re-rank avec BERT + BM-25
+
+
+De base, dans la collection (DL) t'as un doc pertinent pour une seule requête donc étapes:
+- BM-25/ random pour récupérer top K y'aura le doc pertinent + d'autres non pertinenets
+- Re-rank avec BERT
+- Métrique d'éval Rn@K eux ils ont pris K = 1, donc il vérifie au final si ils récupèrent le bon document.
+
+ETAPES:
+- Lancer T-LS et LS en testant la valeur X, choisir le meilleur modèle
+- Lancer BM-25 et random pour récupérer les top K (NS-BM25 et NS-Random)
+- Lancer Bert seul et BERT + BM-25
+- Evaluer.
