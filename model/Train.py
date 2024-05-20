@@ -1,5 +1,5 @@
 import torch
-from Bert import Bert
+from model.Bert import Bert
 from torch.utils.data import DataLoader
 
 class Trainer:
@@ -88,15 +88,16 @@ class Trainer:
         self.model.train()
         train_loss = 0
         for batch in self.train_loader:
-            inputs = batch['input_ids'].to(self.device)
-            masks = batch['attention_mask'].to(self.device)
-            labels = batch['labels'].to(self.device)
-            self.optimizer.zero_grad()
-            y_pred = self.model(inputs, masks)
-            loss = self.loss_fn(y_pred, labels, self.smoothing)
+            batch = [r.to(self.device) for r in batch]
+            inputs, masks, labels = batch
+            self.model.zero_grad()
+            outputs =self. model(input_ids=inputs, attention_mask=masks, labels=labels)
+            logits = outputs[1]
+            loss = self.loss_fn(logits, labels)
             loss.backward()
             self.optimizer.step()
             train_loss += loss.item()
+
         return train_loss
     
     def validate(self):
@@ -106,16 +107,16 @@ class Trainer:
         with torch.no_grad():
             val_loss = 0
             for batch in self.val_loader:
-                inputs = batch['input_ids'].to(self.device)
-                masks = batch['attention_mask'].to(self.device)
-                labels = batch['labels'].to(self.device)
-                self.optimizer.zero_grad()
-                y_pred = self.model(inputs, masks)
-                loss = self.loss_fn(y_pred, labels, self.smoothing)
+                batch = [r.to(self.device) for r in batch]
+                inputs, masks, labels = batch
+                self.model.zero_grad()
+                outputs = self. model(input_ids=inputs, attention_mask=masks, labels=labels)
+                logits = outputs[1]
+                loss = self.loss_fn(logits, labels)
                 val_loss += loss.item()
             return val_loss
         
-    def fit(self, learning_rate = 1e-4, epochs : int = 100, weight_decay : float = 0.01, smoothing : float = 0.1, CL=False):
+    def fit(self, learning_rate = 1e-4, epochs : int = 100, pos_weight : float = None, weight_decay : float = 0.01, smoothing : float = 0.1, CL=False):
         """Method to train the model.
         @param learning_rate : float, The learning rate for the optimizer.
         @param epochs : int, The number of epochs for training the model.
