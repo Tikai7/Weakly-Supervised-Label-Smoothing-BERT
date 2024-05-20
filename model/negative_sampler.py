@@ -2,6 +2,7 @@ import random
 import pandas as pd
 import pyterrier as pt
 from sklearn.preprocessing import minmax_scale
+
 class Sampler():
     def __init__(self,candidats,k,type_ns, type_q):
         """
@@ -15,7 +16,7 @@ class Sampler():
         self.k = k
         self.type_ns = type_ns
         self.type_q = type_q
-    def create_index(self,path_index):
+    def create_index(self,path_index,indexref):
         """
         Creates an index for the collection with PyTerrier, to use when sampling with BM-25.
         Input:
@@ -99,7 +100,7 @@ class Sampler():
         
             # Normalize scores if not empty
             if scores:
-                normalized_scores = preprocessing.minmax_scale(scores, feature_range=(0.01, 0.99))
+                normalized_scores = minmax_scale(scores, feature_range=(0.01, 0.99))
             else:
                 normalized_scores = []
             normalized_scores.extend(scores_for_random)
