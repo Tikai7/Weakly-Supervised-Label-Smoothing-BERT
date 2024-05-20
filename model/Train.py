@@ -27,7 +27,6 @@ class Trainer:
             },
             "params": {
                 "learning_rate": None,
-                "pos_weight": None,
                 "weight_decay": None,
                 "epochs": None,
                 "smoothing" : None,
@@ -83,7 +82,6 @@ class Trainer:
         self.loss_fn = loss_fn
         return self
     
-
     def train(self):
         """Method to train the model"""
         print("Training...")
@@ -93,10 +91,9 @@ class Trainer:
             inputs = batch['input_ids'].to(self.device)
             masks = batch['attention_mask'].to(self.device)
             labels = batch['labels'].to(self.device)
-            print(inputs.shape,masks.shape,labels.shape)
             self.optimizer.zero_grad()
             y_pred = self.model(inputs, masks)
-            loss = self.loss_fn(y_pred, labels)
+            loss = self.loss_fn(y_pred, labels, self.smoothing)
             loss.backward()
             self.optimizer.step()
             train_loss += loss.item()
@@ -114,13 +111,11 @@ class Trainer:
                 labels = batch['labels'].to(self.device)
                 self.optimizer.zero_grad()
                 y_pred = self.model(inputs, masks)
-                loss = self.loss_fn(y_pred, labels)
-                loss.backward()
-                self.optimizer.step()
+                loss = self.loss_fn(y_pred, labels, self.smoothing)
                 val_loss += loss.item()
             return val_loss
         
-    def fit(self, learning_rate = 1e-4, epochs : int = 100, pos_weight : float = None, weight_decay : float = 0.01, smoothing : float = 0.1):
+    def fit(self, learning_rate = 1e-4, epochs : int = 100, weight_decay : float = 0.01, smoothing : float = 0.1, CL=False):
         """Method to train the model.
         @param learning_rate : float, The learning rate for the optimizer.
         @param epochs : int, The number of epochs for training the model.
@@ -128,9 +123,8 @@ class Trainer:
         print(f"Training the model on {self.device}...")
         self.model.to(self.device)
         self.optimizer = self.optimizer(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        
+        self.smoothing = smoothing
         self.history["params"]["learning_rate"] = learning_rate
-        self.history["params"]["pos_weight"] = pos_weight
         self.history["params"]["weight_decay"] = weight_decay
         self.history["params"]["epochs"] = epochs
         self.history["params"]["smoothing"] = smoothing
@@ -141,9 +135,9 @@ class Trainer:
             val_loss_epoch = self.validate()
             train_loss.append(train_loss_epoch/len(self.train_loader))
             val_loss.append(val_loss_epoch / len(self.val_loader))
-
-            if epoch % 10:
-                print(f"Epoch [{epoch+1}/{epochs}], Training Loss: {train_loss[-1]}, Validation Loss: {val_loss[-1]}")
+            if epoch == epochs//2 and CL:
+              self.smoothing = 0 
+            print(f"Epoch [{epoch+1}/{epochs}], Training Loss: {train_loss[-1]}, Validation Loss: {val_loss[-1]}")
 
         print("Training complete.")
         self.history["training"]["loss"] = train_loss

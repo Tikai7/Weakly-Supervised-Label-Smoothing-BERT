@@ -32,7 +32,7 @@ class WSLSmoothing(nn.Module):
     def __init__(self, nb_labels=2, smoothing=0.1):
         super().__init__()
         self.smoothing = smoothing
-        self.ls = self.LSmoothing(nb_labels)
+        self.ls = LSmoothing(nb_labels)
         
     def forward(self, y_pred, y_true, ns_scores):
         """

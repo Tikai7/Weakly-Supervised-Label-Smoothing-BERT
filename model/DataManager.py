@@ -18,15 +18,19 @@ class DataManager():
         }
     
     @staticmethod
-    def prepare_data(df, max_length=64):
+    def prepare_data(df, max_length=64, max_size=None):
         tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        if max_size:
+            df = df.sample(n=max_size)
         # Extract columns as lists
         queries = df['query'].tolist()
-        docs = df['docno'].tolist()
+        docs = df['docno'].tolist()  # Ensure this column corresponds to document texts
         labels = df['label'].tolist()
-        # Use batch encoding
+        # Concatenate queries and documents with the SEP token
+        query_doc_pairs = [query + " [SEP] " + doc for query, doc in zip(queries, docs)]
+        # Use batch encoding for the concatenated query-doc pairs
         encoded = tokenizer.batch_encode_plus(
-            list(zip(queries, docs)),
+            query_doc_pairs,
             add_special_tokens=True,
             max_length=max_length,
             padding='max_length',
@@ -34,8 +38,11 @@ class DataManager():
             return_attention_mask=True,
             return_tensors='pt'
         )
+
         inputs = encoded['input_ids']
         attention_masks = encoded['attention_mask']
+        
         # Convert labels to tensor
         labels = torch.tensor(labels)
+        
         return inputs, attention_masks, labels
