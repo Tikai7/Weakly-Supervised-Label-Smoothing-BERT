@@ -86,12 +86,15 @@ class Trainer:
 
     def train(self):
         """Method to train the model"""
+        self.model.train()
         train_loss = 0
-        for batch_x, batch_y in self.train_loader:
-            batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-            y_pred = self.model(batch_x)
+        for batch in self.train_loader:
+            inputs = batch['input_ids'].to(self.device)
+            masks = batch['attention_mask'].to(self.device)
+            labels = batch['labels'].to(self.device)
             self.optimizer.zero_grad()
-            loss = self.loss_fn(y_pred, batch_y)
+            y_pred = self.model(inputs, masks)
+            loss = self.loss_fn(y_pred, labels)
             loss.backward()
             self.optimizer.step()
             train_loss += loss.item()
@@ -99,13 +102,16 @@ class Trainer:
     
     def validate(self):
         """Methode to validate the model"""
+        self.model.eval()
         with torch.no_grad():
             val_loss = 0
-            for batch_x, batch_y in self.val_loader:
-                batch_x, batch_y = batch_x.to(self.device), batch_y(self.device)
-                y_pred = self.model(batch_y)
+            for batch in self.val_loader:
+                inputs = batch['input_ids'].to(self.device)
+                masks = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
                 self.optimizer.zero_grad()
-                loss = self.loss_fn(y_pred, batch_y)
+                y_pred = self.model(inputs, masks)
+                loss = self.loss_fn(y_pred, labels)
                 loss.backward()
                 self.optimizer.step()
                 val_loss += loss.item()
