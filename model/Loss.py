@@ -25,5 +25,4 @@ class LSmoothing(nn.Module):
         loss = -self.uniform_distribution*(y_0 * proba_c0 + (1-y_0)*proba_c0_inv + y_1*proba_c1 + (1-y_1)*proba_c1_inv)
 
         return loss
-class WSLSmoothing(nn.Module):
-    pass
+
