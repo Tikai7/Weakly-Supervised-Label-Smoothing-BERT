@@ -18,22 +18,24 @@ class DataManager():
         }
     
     @staticmethod
-    def prepare_data(df, max_length=512):
+    def prepare_data(df, max_length=64):
         tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-        inputs = []
-        attention_masks = []
-        labels = []
-        for _, row in df.iterrows():
-            encoded = tokenizer.encode_plus(
-                row['title','docno'], 
-                add_special_tokens=True,
-                max_length=max_length,
-                padding='max_length',
-                truncation=True,
-                return_attention_mask=True,
-                return_tensors='pt'
-            )
-            inputs.append(encoded['input_ids'])
-            attention_masks.append(encoded['attention_mask'])
-            labels.append(row['label'])
-        return torch.cat(inputs, dim=0), torch.cat(attention_masks, dim=0), torch.tensor(labels)
+        # Extract columns as lists
+        queries = df['query'].tolist()
+        docs = df['docno'].tolist()
+        labels = df['label'].tolist()
+        # Use batch encoding
+        encoded = tokenizer.batch_encode_plus(
+            list(zip(queries, docs)),
+            add_special_tokens=True,
+            max_length=max_length,
+            padding='max_length',
+            truncation=True,
+            return_attention_mask=True,
+            return_tensors='pt'
+        )
+        inputs = encoded['input_ids']
+        attention_masks = encoded['attention_mask']
+        # Convert labels to tensor
+        labels = torch.tensor(labels)
+        return inputs, attention_masks, labels

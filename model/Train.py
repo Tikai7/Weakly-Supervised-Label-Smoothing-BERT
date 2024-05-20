@@ -1,5 +1,5 @@
 import torch
-from model.Bert import Bert
+from Bert import Bert
 from torch.utils.data import DataLoader
 
 class Trainer:
@@ -86,12 +86,14 @@ class Trainer:
 
     def train(self):
         """Method to train the model"""
+        print("Training...")
         self.model.train()
         train_loss = 0
         for batch in self.train_loader:
             inputs = batch['input_ids'].to(self.device)
             masks = batch['attention_mask'].to(self.device)
             labels = batch['labels'].to(self.device)
+            print(inputs.shape,masks.shape,labels.shape)
             self.optimizer.zero_grad()
             y_pred = self.model(inputs, masks)
             loss = self.loss_fn(y_pred, labels)
@@ -102,6 +104,7 @@ class Trainer:
     
     def validate(self):
         """Methode to validate the model"""
+        print("Validating...")
         self.model.eval()
         with torch.no_grad():
             val_loss = 0
