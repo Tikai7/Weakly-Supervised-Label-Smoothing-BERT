@@ -61,17 +61,17 @@ class BM25Sampling():
                         'question1': row['question1'],
                         'question2': matched_row['question2'],
                         'is_duplicate': 0,
-                        'score': result['score']
+                        'score': result['score'] if pd.notna(result['score']) else np.random.uniform()
                     })
 
             # Also store the score for the original pair if it's a duplicate
             if row['is_duplicate'] == 1:
-                self_score = results[results['docno'] == row['global_docno']]['score'].values[0]
+                self_scores = results[results['docno'] == row['global_docno']]['score'].values
                 new_questions.append({
                     'question1': row['question1'],
                     'question2': row['question2'],
                     'is_duplicate': 1,
-                    'bm25_score': self_score
+                    'bm25_score': self_scores[0] if (len(self_scores) > 0 and pd.notna(self_scores[0])) else 1
                 })
 
         augmented_data = pd.DataFrame(new_questions)
