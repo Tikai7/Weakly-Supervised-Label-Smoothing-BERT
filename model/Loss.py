@@ -35,18 +35,24 @@ class WSLSmoothing(nn.Module):
         self.ls = LSmoothing(nb_labels)
         self.num_classes = 2
         
+
     def forward(self, outputs, targets, ns_scores, smoothing=0.1):
+        ns_scores = ns_scores.unsqueeze(-1)  # Ensure ns_scores is always [N, 1]
+
         # Compute smoothed labels using the original label smoothing class
         smoothed_labels = self.ls(outputs, targets, ns_scores, smoothing, True)
-
-        # Adjust the weights for the negative class using ns_scores
-        adjusted_neg_class = (1 - smoothing) * ns_scores + (smoothing / (self.num_classes - 1))
-        adjusted_pos_class = (1 - smoothing) * (1 - ns_scores) + (smoothing / (self.num_classes - 1))
-
-        # Build the adjusted label matrix
         adjusted_labels = torch.zeros_like(smoothed_labels)
-        adjusted_labels[torch.arange(targets.size(0)), targets] = adjusted_pos_class
-        adjusted_labels[torch.arange(targets.size(0)), 1 - targets] = adjusted_neg_class
 
+        # Indices for positive and negative logits
+        pos_indices = targets == 1
+        neg_indices = targets == 0
+
+        # Adjust the positive and negative class weights using ns_scores
+        adjusted_labels[pos_indices, 1] = (1 - smoothing) + smoothing * ns_scores[pos_indices].squeeze(-1)
+        adjusted_labels[neg_indices, 0] = (1 - smoothing) * ns_scores[neg_indices].squeeze(-1) + smoothing / (self.num_classes - 1)
+        adjusted_labels[neg_indices, 1] = (1 - smoothing) * (1 - ns_scores[neg_indices].squeeze(-1)) + smoothing / (self.num_classes - 1)
+
+        # Calculate the cross-entropy loss using the adjusted labels
+             
         loss_fn = nn.CrossEntropyLoss()
         return loss_fn(outputs, adjusted_labels)
