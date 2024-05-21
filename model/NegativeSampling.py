@@ -1,13 +1,11 @@
-import random
+import re
 import pandas as pd
 import pyterrier as pt
 import numpy as np 
-from sklearn.preprocessing import minmax_scale
-
-
+    
 class RandomSampling():
     @staticmethod
-    def augment_data(data, k=2):
+    def sample(data, k=2):
         data['random_score'] = np.random.uniform(0, 1, size=len(data))
         duplicates = data[data['is_duplicate'] == 1]
         new_question1 = []
@@ -15,123 +13,80 @@ class RandomSampling():
         new_labels = []
         random_scores = []
         for _, row in duplicates.iterrows():
-            sampled_rows = duplicates.sample(n=k, replace=False)
+            sampled_rows = duplicates.sample(n=k, replace=False)  # replace=True to allow choosing the same row more than once if needed
             for _, other_row in sampled_rows.iterrows():
-                if row['question1'] != other_row['question1']:  
+                if row['question1'] != other_row['question1']:  # Ensure not to duplicate the exact pair
                     new_question1.append(row['question1'])
                     new_question2.append(other_row['question2'])
-                    new_labels.append(0)  
+                    new_labels.append(0)  # These are non-duplicate by design
                     random_scores.append(np.random.uniform(0, 1))
         augmented_data = pd.DataFrame({
             'question1': new_question1,
             'question2': new_question2,
             'is_duplicate': new_labels,
-            'random_score': random_scores
+            'score': random_scores
         })
+        final_df = pd.concat([data, augmented_data], ignore_index=True)
+        # Drop the 'global_docno' column before returning
+        final_df = final_df.drop(columns="random_score")
+        return final_df
 
-        return pd.concat([data, augmented_data], ignore_index=True)
+class BM25Sampling():
+    @staticmethod
+    def preprocess_query(query):
+        # Basic preprocessing to ensure consistent query formatting
+        query = query.lower()
+        query = re.sub(r'[^\w\s]', '', query)  # remove punctuation
+        return query
     
-class Sampler():
-    def __init__(self,candidats,k,type_ns, type_q):
-        """
-        candidats: Liste des candidates parmi lesquels il faudra sample
-        k: nombre de candidats à sample
-        type_ns: type de negative sampling
-        type_q: type de transformation de query
-        """
-        self.candidats = candidats
-        #récupèrer k candidats parmi la liste des candidats
-        self.k = k
-        self.type_ns = type_ns
-        self.type_q = type_q
-
-    def create_index(self,path_index,indexref):
-        """
-        Creates an index for the collection with PyTerrier, to use when sampling with BM-25.
-        Input:
-            - path_index: chemin où placer l'index
-        """
-        docs = pd.DataFrame(self.candidats)
-        indexer = pt.DFIndexer(f"{path_index}/index_projet", overwrite=True)         # Définition du format de données (DFIndexer())
-        index_ref = indexer.index(docs["docid"], docs["body"])
-        return pt.IndexFactory.of(indexref), indexref
+    @staticmethod
+    def sample(index_ref, data, k=2):
+        index = pt.IndexFactory.of(index_ref)
+        bm25 = pt.BatchRetrieve(index, wmodel="BM25", metadata=['docno'])
         
-    def sampling(self, query, pertinent_docs, path_index):
-        """
-        Input:
-            query: won't be used for the random sampling but for BM-25.
-            pertinent_docs: documents pertinents, si les documents sampled se trouve dans la liste des documents pertinents alors il faut en tirer de nouveaux.
-        Output:
-            final_sampled: liste des docs non pertinent sampled de la base (random ou alors BM-25)
-            scores: scores des documents de final_sampled (score aléatoire uniforme)
-            pertinent_present: booléen,True si le document pertinent a été trouvé dans la liste final_sampled, False sinon
-            pertinent_doc_rank: rang du document pertinent si trouvé et son rang dans la liste final_sammpled
+        new_questions = []
+
+        # Iterate through each row in the dataset
+        for _, row in data.iterrows():
+            # Prepare the query from question1
+            query_df = pd.DataFrame({'query': [BM25Sampling.preprocess_query(row['question1'])], 'qid': [1]})
+            results = bm25.transform(query_df)
             
-        """
-        pertinent_present = False
-        pertinent_doc_rank = -1
-        final_sampled = []
-        if str.lower(self.type_ns) == 'random':
-            sampled = random.sample(self.candidats, self.k)
-            #Supprimer les documents pertinent de la liste sampled.
-            for i,d in enumerate(sampled):
-                if d in pertinent_docs:
-                    pertinent_present = True
-                    pertinent_doc_rank = i
-                else:
-                    final_sampled.append(d)
-            # Si la taille de la liste finale n'est pas égale à k (dans ce cas il y avait un document pertinent dans cette liste) alors resample encore.
-            while len(final_sampled) != self.k:
-                final_sampled = [d for d in random.sample(self.candidats, self.k) if d not in pertinent_docs]
-            scores = [random.uniform(0,0.99) for i in range(len(final_sampled))]
+            # Filter results to get top k valid results that are not self-references
+            valid_results = results[results['docno'].isin(data['global_docno'])].head(k)
+            for _, result in valid_results.iterrows():
+                if result['docno'] != row['global_docno']:
+                    matched_row = data[data['global_docno'] == result['docno']].iloc[0]
+                    new_questions.append({
+                        'question1': row['question1'],
+                        'question2': matched_row['question2'],
+                        'is_duplicate': 0,
+                        'score': result['score']
+                    })
 
-        elif str.lower(self.type_ns) == 'bm25':
-            if not pt.started():
-                pt.init()
-            #Create the index:
-            index,indexref = self.create_index(path_index)
-            #Apply BM_25 on the query
-            if str.lower(self.type_q) == "rm3":
-                pipeline = (pt.BatchRetrieve(indexref, wmodel="BM25") >> 
-                    pt.rewrite.RM3(indexref) >> 
-                    pt.BatchRetrieve(indexref, wmodel="BM25")
-                )
-            elif str.lower(self.type_q) == "bo1":
-                pipeline = pt.BatchRetrieve(index, wmodel="BM25", controls={"qemodel" : "Bo1", "qe" : "on"})
+            # Also store the score for the original pair if it's a duplicate
+            if row['is_duplicate'] == 1:
+                self_score = results[results['docno'] == row['global_docno']]['score'].values[0]
+                new_questions.append({
+                    'question1': row['question1'],
+                    'question2': row['question2'],
+                    'is_duplicate': 1,
+                    'bm25_score': self_score
+                })
 
-            elif str.lower(self.type_q) == "kl":
-                pipeline = pt.BatchRetrieve(index, wmodel="BM25", controls={"qemodel" : "KL", "qe" : "on"})
-                
-            elif str.lower(self.type_q) == "none":
-                pipeline = pt.BatchRetrieve(index, wmodel="BM25")
-            
-            #Retrieve top-k docs
-            sampled_initial = pipeline.search(query).head(self.k)
+        augmented_data = pd.DataFrame(new_questions)
 
-            #Check if a pertinent doc is present in the sampled list, and delete it from the final list
-            scores = []
-            for i, row in enumerate(sampled_initial.itertuples()):
-                doc, score = row.docno, row.score
-                if doc in pertinent_docs:  # Assuming relevant_docs is defined
-                    pertinent_present = True
-                    pertinent_doc_rank = i
-                else:
-                    final_sampled.append(doc)
-                    scores.append(score)
-        
-            # Si la taille de la liste finale n'est pas égale à k (dans ce cas il y avait un document pertinent dans cette liste) alors resample encore.
-            scores_for_random = [0] * (self.k - len(sampled))
-            while len(final_sampled) != self.k:
-                extra_samples = [d for d in random.sample(self.candidats, self.k - len(final_sampled))
-                                 if d not in final_sampled and d not in pertinent_docs]
-                final_sampled.extend(extra_samples)
-        
-            # Normalize scores if not empty
-            if scores:
-                normalized_scores = minmax_scale(scores, feature_range=(0.01, 0.99))
+        if 'bm25_score' in augmented_data and not augmented_data.empty:
+            max_score = augmented_data['bm25_score'].max()
+            min_score = augmented_data['bm25_score'].min()
+            if max_score > min_score:  # Prevent division by zero
+                augmented_data['score'] = (augmented_data['score'] - min_score) / (max_score - min_score)
             else:
-                normalized_scores = []
-            normalized_scores.extend(scores_for_random)
-            scores = normalized_scores
-            
-        return final_sampled, pertinent_present, pertinent_doc_rank, scores
+                augmented_data['score'] = 0.0  # If all scores are the same
+
+        # Combine with the original data
+        final_df = pd.concat([data, augmented_data], ignore_index=True)
+        # Drop the 'global_docno' column before returning
+        final_df = final_df.drop(columns=["global_docno","bm25_score"])
+        
+        return final_df

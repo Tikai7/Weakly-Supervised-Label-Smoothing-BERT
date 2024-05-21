@@ -1,3 +1,4 @@
+import pyterrier as pt
 import torch
 from torch.utils.data import Dataset
 import pandas as pd
@@ -19,9 +20,17 @@ class QuoraDataset(Dataset):
                                 padding='max_length', max_length=self.max_length, truncation=True)
         inputs = {key: torch.tensor(val) for key, val in inputs.items()}
         label = torch.tensor(row['is_duplicate'])
-        random_score = torch.tensor(row['random_score'], dtype=torch.float)
-        return inputs, label, random_score
+        score = torch.tensor(row['score'], dtype=torch.float)
+        return inputs, label, score
     
+    @staticmethod   
+    def index_data(df, type_df="train"):
+        indexer = pt.DFIndexer("./index_" + type_df, overwrite=True)
+        data_to_index = df.copy()
+        data_to_index['docno'] = data_to_index['global_docno']
+        index_ref = indexer.index(data_to_index['question1'], data_to_index['question2'], data_to_index['docno'])
+        return index_ref
+
     @staticmethod
     def load_data(path,size=None):
         data = pd.read_csv(path)
