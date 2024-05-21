@@ -36,7 +36,7 @@ class BM25Sampling():
     def preprocess_query(query):
         # Basic preprocessing to ensure consistent query formatting
         query = query.lower()
-        query = re.sub(r'[^\w\s]', '', query)  # remove punctuation
+        query = re.sub(r'[^\w\s]', '', query)  # Remove punctuation
         return query
     
     @staticmethod
@@ -45,48 +45,37 @@ class BM25Sampling():
         bm25 = pt.BatchRetrieve(index, wmodel="BM25", metadata=['docno'])
         
         new_questions = []
-
-        # Iterate through each row in the dataset
-        for _, row in data.iterrows():
+        # Iterate through each row in the dataset that are duplicates
+        duplicates = data[data['is_duplicate'] == 1]
+        for _, row in duplicates.iterrows():
             # Prepare the query from question1
             query_df = pd.DataFrame({'query': [BM25Sampling.preprocess_query(row['question1'])], 'qid': [1]})
             results = bm25.transform(query_df)
-            
-            # Filter results to get top k valid results that are not self-references
-            valid_results = results[results['docno'].isin(data['global_docno'])].head(k)
+            # Get top k results, excluding the current question itself
+            valid_results = results[results['docno'].isin(data['global_docno']) & (results['docno'] != row['global_docno'])].head(k)
             for _, result in valid_results.iterrows():
-                if result['docno'] != row['global_docno']:
-                    matched_row = data[data['global_docno'] == result['docno']].iloc[0]
-                    new_questions.append({
-                        'question1': row['question1'],
-                        'question2': matched_row['question2'],
-                        'is_duplicate': 0,
-                        'score': result['score'] if pd.notna(result['score']) else np.random.uniform()
-                    })
-
-            # Also store the score for the original pair if it's a duplicate
-            if row['is_duplicate'] == 1:
-                self_scores = results[results['docno'] == row['global_docno']]['score'].values
+                matched_row = data[data['global_docno'] == result['docno']].iloc[0]
                 new_questions.append({
                     'question1': row['question1'],
-                    'question2': row['question2'],
-                    'is_duplicate': 1,
-                    'bm25_score': self_scores[0] if (len(self_scores) > 0 and pd.notna(self_scores[0])) else 1
+                    'question2': matched_row['question2'],
+                    'is_duplicate': 0,
+                    'score': result['score'] if pd.notna(result['score']) else np.random.uniform()
                 })
-
+        # Create a DataFrame from the collected new questions
         augmented_data = pd.DataFrame(new_questions)
-
-        if 'bm25_score' in augmented_data and not augmented_data.empty:
-            max_score = augmented_data['bm25_score'].max()
-            min_score = augmented_data['bm25_score'].min()
-            if max_score > min_score:  # Prevent division by zero
-                augmented_data['score'] = (augmented_data['score'] - min_score) / (max_score - min_score)
-            else:
-                augmented_data['score'] = 0.0  # If all scores are the same
 
         # Combine with the original data
         final_df = pd.concat([data, augmented_data], ignore_index=True)
+        # Normalize scores if present and handle NaN
+        if 'score' in final_df:
+            final_df['score'].fillna(final_df.apply(lambda x: np.random.uniform() if x['is_duplicate'] == 0 else 1, axis=1), inplace=True)
+            max_score = final_df['score'].max()
+            min_score = final_df['score'].min()
+            if max_score > min_score:  # Prevent division by zero
+                final_df['score'] = (final_df['score'] - min_score) / (max_score - min_score)
+            else:
+                final_df['score'] = 0.0  # If all scores are the same
+
         # Drop the 'global_docno' column before returning
-        final_df = final_df.drop(columns=["global_docno","bm25_score"])
-        
+        final_df = final_df.drop(columns="global_docno")
         return final_df
