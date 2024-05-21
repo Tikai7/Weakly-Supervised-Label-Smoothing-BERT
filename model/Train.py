@@ -1,5 +1,4 @@
 import torch
-from model.Bert import Bert
 from torch.utils.data import DataLoader
 
 class Trainer:
@@ -33,15 +32,6 @@ class Trainer:
             }
         }
 
-    
-    def load_and_set_model(self, model_name : str, path : str):
-        """Method to load and set the model"""
-        state = torch.load(path)
-        model = Bert(model_name)
-        model.load_state_dict(state)
-        self.set_model(model)
-        return model
-    
     def save_model(self, path : str = "model.pth", history_path : str = "history.txt"):
         """Method to save the model.
         """
@@ -64,7 +54,7 @@ class Trainer:
         self.model = model
         return self
     
-    def set_loader(self, train_loader : DataLoader, val_loader : DataLoader, test_loader : DataLoader):
+    def set_loader(self, train_loader : DataLoader, val_loader : DataLoader | None, test_loader : DataLoader | None):
         """Method to set the training and validation data loaders.
         @param train_loader : DataLoader, The training data loader.
         @param val_loader : DataLoader, The validation data loader.
@@ -87,17 +77,16 @@ class Trainer:
         print("Training...")
         self.model.train()
         train_loss = 0
-        for batch in self.train_loader:
-            batch = [r.to(self.device) for r in batch]
-            inputs, masks, labels = batch
-            self.model.zero_grad()
-            outputs =self. model(input_ids=inputs, attention_mask=masks, labels=labels)
-            logits = outputs[1]
-            loss = self.loss_fn(logits, labels)
+        for inputs, labels, ns_scores in self.train_loader:
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            labels = labels.to(self.device)
+            ns_scores = ns_scores.to(self.device)
+            self.optimizer.zero_grad()
+            outputs = self.model(**inputs)
+            loss = self.loss_fn(outputs, labels, ns_scores, self.smoothing)
             loss.backward()
             self.optimizer.step()
             train_loss += loss.item()
-
         return train_loss
     
     def validate(self):
@@ -106,25 +95,25 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             val_loss = 0
-            for batch in self.val_loader:
-                batch = [r.to(self.device) for r in batch]
-                inputs, masks, labels = batch
-                self.model.zero_grad()
-                outputs = self. model(input_ids=inputs, attention_mask=masks, labels=labels)
-                logits = outputs[1]
-                loss = self.loss_fn(logits, labels)
+            for inputs, labels, ns_scores in self.val_loader:
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                labels = labels.to(self.device)
+                ns_scores = ns_scores.to(self.device)
+                outputs = self.model(**inputs)
+                loss = self.loss_fn(outputs, labels, ns_scores, self.smoothing)
                 val_loss += loss.item()
             return val_loss
         
-    def fit(self, learning_rate = 1e-4, epochs : int = 100, pos_weight : float = None, weight_decay : float = 0.01, smoothing : float = 0.1, CL=False):
+    def fit(self, learning_rate = 1e-4, epochs : int = 100, weight_decay : float = 0.01, smoothing : float = 0.1, CL=False):
         """Method to train the model.
         @param learning_rate : float, The learning rate for the optimizer.
         @param epochs : int, The number of epochs for training the model.
         """
         print(f"Training the model on {self.device}...")
         self.model.to(self.device)
-        self.optimizer = self.optimizer(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         self.smoothing = smoothing
+        self.optimizer = self.optimizer(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        
         self.history["params"]["learning_rate"] = learning_rate
         self.history["params"]["weight_decay"] = weight_decay
         self.history["params"]["epochs"] = epochs
@@ -133,11 +122,16 @@ class Trainer:
         val_loss, train_loss = [], []
         for epoch in range(epochs):
             train_loss_epoch = self.train()
-            val_loss_epoch = self.validate()
+            if self.val_loader is not None:
+                val_loss_epoch = self.validate()
+                val_loss.append(val_loss_epoch / len(self.val_loader))
+
             train_loss.append(train_loss_epoch/len(self.train_loader))
-            val_loss.append(val_loss_epoch / len(self.val_loader))
-            if epoch == epochs//2 and CL:
-              self.smoothing = 0 
+
+            # for curriculum learning
+            if CL and epoch == epochs//2:
+                self.smoothing = 0.0
+
             print(f"Epoch [{epoch+1}/{epochs}], Training Loss: {train_loss[-1]}, Validation Loss: {val_loss[-1]}")
 
         print("Training complete.")

@@ -1,8 +1,36 @@
 import random
 import pandas as pd
 import pyterrier as pt
+import numpy as np 
 from sklearn.preprocessing import minmax_scale
 
+
+class RandomSampling():
+    @staticmethod
+    def augment_data(data, k=2):
+        data['random_score'] = np.random.uniform(0, 1, size=len(data))
+        duplicates = data[data['is_duplicate'] == 1]
+        new_question1 = []
+        new_question2 = []
+        new_labels = []
+        random_scores = []
+        for _, row in duplicates.iterrows():
+            sampled_rows = duplicates.sample(n=k, replace=False)
+            for _, other_row in sampled_rows.iterrows():
+                if row['question1'] != other_row['question1']:  
+                    new_question1.append(row['question1'])
+                    new_question2.append(other_row['question2'])
+                    new_labels.append(0)  
+                    random_scores.append(np.random.uniform(0, 1))
+        augmented_data = pd.DataFrame({
+            'question1': new_question1,
+            'question2': new_question2,
+            'is_duplicate': new_labels,
+            'random_score': random_scores
+        })
+
+        return pd.concat([data, augmented_data], ignore_index=True)
+    
 class Sampler():
     def __init__(self,candidats,k,type_ns, type_q):
         """
@@ -16,6 +44,7 @@ class Sampler():
         self.k = k
         self.type_ns = type_ns
         self.type_q = type_q
+
     def create_index(self,path_index,indexref):
         """
         Creates an index for the collection with PyTerrier, to use when sampling with BM-25.
@@ -27,7 +56,7 @@ class Sampler():
         index_ref = indexer.index(docs["docid"], docs["body"])
         return pt.IndexFactory.of(indexref), indexref
         
-    def sampling(self,query, pertinent_docs,path_index):
+    def sampling(self, query, pertinent_docs, path_index):
         """
         Input:
             query: won't be used for the random sampling but for BM-25.
@@ -51,7 +80,6 @@ class Sampler():
                     pertinent_doc_rank = i
                 else:
                     final_sampled.append(d)
-
             # Si la taille de la liste finale n'est pas égale à k (dans ce cas il y avait un document pertinent dans cette liste) alors resample encore.
             while len(final_sampled) != self.k:
                 final_sampled = [d for d in random.sample(self.candidats, self.k) if d not in pertinent_docs]
@@ -106,4 +134,4 @@ class Sampler():
             normalized_scores.extend(scores_for_random)
             scores = normalized_scores
             
-        return final_sampled, pertinent_present,pertinent_doc_rank,scores
+        return final_sampled, pertinent_present, pertinent_doc_rank, scores

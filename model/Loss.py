@@ -3,26 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class LSmoothing(nn.Module):
-    def __init__(self, nb_labels=2) -> None:
+    def __init__(self, epsilon=0.1, num_classes=2):
         super().__init__()
-        self.nb_labels = nb_labels
-        self.uniform_distribution = 1 / nb_labels
+        self.num_classes = num_classes
 
-    def forward(self, y_pred, y_true, smoothing=0.1):
-        y_proba = F.log_softmax(y_pred, dim=1)
-        smoothing_factor = 1 - smoothing
-        uniform_smoothing_factor = smoothing / self.nb_labels
+    def forward(self, outputs, targets, ns_scores=None, epsilon=0.1):
+        # Create a tensor to hold the smoothed labels
+        batch_size = targets.size(0)  # Number of examples in the batch
+        smoothed_labels = torch.full((batch_size, self.num_classes), epsilon / (self.num_classes - 1), device=outputs.device)
 
-        smoothed_labels = torch.zeros_like(y_pred)
-        for i in range(y_pred.size(0)):
-            true_label = y_true[i]
-            smoothed_labels[i] = uniform_smoothing_factor
-            smoothed_labels[i, true_label] = smoothing_factor + uniform_smoothing_factor
-            
-        loss = -torch.sum(smoothed_labels * y_proba) / y_pred.size(0)
-        return loss
+        # Create a zero tensor the same size as smoothed_labels for one-hot encoding
+        targets_one_hot = torch.zeros_like(smoothed_labels)  # Ensure device matches
 
+        # Scatter 1s into the correct indices in targets_one_hot
+        targets_one_hot.scatter_(1, targets.unsqueeze(1), 1.0)  # No device argument here
 
+        # Combine the uniform and one-hot distributions
+        smoothed_labels = (1 - epsilon) * targets_one_hot + epsilon * smoothed_labels
+
+        # Calculate the cross-entropy loss between the model's outputs and the smoothed labels
+        loss_fn = nn.CrossEntropyLoss()
+        return loss_fn(outputs, smoothed_labels)
+    
+    
 class WSLSmoothing(nn.Module):
     """
     Integrates traditional label smoothing with Weakly Supervised Label Smoothing (WSLS) 
@@ -32,9 +35,9 @@ class WSLSmoothing(nn.Module):
     def __init__(self, nb_labels=2, smoothing=0.1):
         super().__init__()
         self.smoothing = smoothing
-        self.ls = LSmoothing(nb_labels)
+        self.ls = self.LSmoothing(nb_labels)
         
-    def forward(self, y_pred, y_true, ns_scores):
+    def forward(self, y_pred, y_true, ns_scores, smoothing=0.1):
         """
         Args:
             y_pred: Predictions from the model (logits before softmax).
@@ -44,19 +47,14 @@ class WSLSmoothing(nn.Module):
         # Compute log probabilities from predictions
         log_probs = F.log_softmax(y_pred, dim=1)
         # The normal label smoothing for examples where label = 1 (i.e. the uniform distribution)
-        _,y_0,y_1 = self.ls.forward(y_pred,y_true,self.smoothing)
-        
+        _,y_0,y_1 = self.ls.forward(y_pred,y_true,smoothing)
         # Use weak supervision for labels = 0 
         # For the negative class (logits 0): Increase the smoothed value based on ns_scores
-        weak_weight_neg = torch.where(y_true == 0, y_0 * ((1 - self.smoothing) + self.smoothing * ns_scores), y_0 * (self.smoothing + (1 - self.smoothing) * (1 - ns_scores)))
+        weak_weight_neg = torch.where(y_true == 0, y_0 * ((1 - smoothing) + smoothing * ns_scores), y_0 * (smoothing + (1 - smoothing) * (1 - ns_scores)))
         # For the positive class (logits 1): Adjust by a small smoothing or use (1-ns_scores)
-        weak_weight_pos = torch.where(y_true == 0,y_1 * (self.smoothing + (1 - self.smoothing) * ns_scores),y_1 * ((1 - self.smoothing) + self.smoothing * (1 - ns_scores)))
-
+        weak_weight_pos = torch.where(y_true == 0,y_1 * (smoothing + (1 - smoothing) * ns_scores), y_1 * ((1 - smoothing) + smoothing * (1 - ns_scores)))
         # Create a tensor of these modified distributions
         weight = torch.stack([weak_weight_neg, weak_weight_pos], dim=1)
-        
         # Compute the weighted loss
         loss = torch.sum(-weight * log_probs, dim=1).mean()
-
         return loss
-
