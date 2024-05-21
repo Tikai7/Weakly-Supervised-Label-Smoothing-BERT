@@ -6,7 +6,7 @@ import numpy as np
 class RandomSampling():
     @staticmethod
     def sample(data, k=2):
-        data['random_score'] = np.random.uniform(0, 1, size=len(data))
+        data['score'] = np.random.uniform(0, 1, size=len(data))
         duplicates = data[data['is_duplicate'] == 1]
         new_question1 = []
         new_question2 = []
@@ -28,7 +28,7 @@ class RandomSampling():
         })
         final_df = pd.concat([data, augmented_data], ignore_index=True)
         # Drop the 'global_docno' column before returning
-        final_df = final_df.drop(columns="random_score")
+        final_df = final_df.drop(columns=["global_docno"])
         return final_df
 
 class BM25Sampling():
