@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 
 class Trainer:
-    """A class to represent the training process for the U-Net model for vessel segmentation.
+    """Class pour entrainer un modèle.
     """
     def __init__(self) -> None:
         self.model : torch.nn.Module = None
@@ -33,47 +33,31 @@ class Trainer:
         }
 
     def save_model(self, path : str = "model.pth", history_path : str = "history.txt"):
-        """Method to save the model.
-        """
         print("Saving the model...")
         torch.save(self.model.state_dict(), path)
         torch.save(self.history, history_path)
         print("Model saved.")
 
     def set_optimizer(self, optimizer : str):
-        """Method to set the optimizer for the model.
-        @param optimizer, The optimizer to be used for training the model.
-        """
         self.optimizer : torch.optim.Optimizer = optimizer
         return self
     
     def set_model(self, model : torch.nn.Module):
-        """Method to set the model for training.
-        @param model, The model to be trained.
-        """
         self.model = model
         return self
     
     def set_loader(self, train_loader : DataLoader, val_loader : DataLoader | None, test_loader : DataLoader | None):
-        """Method to set the training and validation data loaders.
-        @param train_loader : DataLoader, The training data loader.
-        @param val_loader : DataLoader, The validation data loader.
-        @param test_loader : DataLoader, The test data loader.
-        """
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
         return self
     
     def set_loss_fn(self, loss_fn : torch.nn.Module):
-        """Method to set the loss function for training the model.
-        @param loss_fn, The loss function to be used for training the model.
-        """
         self.loss_fn = loss_fn
         return self
     
     def train(self):
-        """Method to train the model"""
+        """Méthode pour entrainer le modèle"""
         print("Training...")
         self.model.train()
         train_loss = 0
@@ -90,7 +74,7 @@ class Trainer:
         return train_loss
     
     def validate(self):
-        """Methode to validate the model"""
+        """Méthode pour valider le modèle"""
         print("Validating...")
         self.model.eval()
         with torch.no_grad():
@@ -113,7 +97,7 @@ class Trainer:
         self.model.to(self.device)
         self.smoothing = smoothing
         self.optimizer = self.optimizer(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        
+
         self.history["params"]["learning_rate"] = learning_rate
         self.history["params"]["weight_decay"] = weight_decay
         self.history["params"]["epochs"] = epochs
@@ -128,7 +112,7 @@ class Trainer:
 
             train_loss.append(train_loss_epoch/len(self.train_loader))
 
-            # for curriculum learning
+            # for curriculum learning, mettre le smoothing à 0 (two-stage training selon le papier)
             if CL and epoch == epochs//2:
                 self.smoothing = 0.0
 
