@@ -22,7 +22,22 @@ class QuoraDataset(Dataset):
         label = torch.tensor(row['is_duplicate'])
         score = torch.tensor(row['score'], dtype=torch.float)
         return inputs, label, score
-    
+
+    @staticmethod
+    def remove_overlapping_questions(train_df, other_df, question="question1"):
+        print("Shape before : ", other_df.shape)
+        # Combine 'question1' and 'question2' to create a unique identifier for each question pair
+        train_df['combined'] = train_df[question] 
+        other_df['combined'] = other_df[question] 
+        train_questions = set(train_df['combined'].unique())
+        filtered_other_df = other_df[~other_df['combined'].isin(train_questions)]
+        train_df.drop(columns=['combined'], inplace=True)
+        filtered_other_df.drop(columns=['combined'], inplace=True)
+
+        group_sizes = filtered_other_df.groupby('question1')['is_duplicate'].transform('size')
+        filtered_other_df = filtered_other_df[group_sizes >= 10]
+        return filtered_other_df
+
     @staticmethod   
     def index_data(df, type_df="train"):
         indexer = pt.DFIndexer("./index_" + type_df, overwrite=True)
