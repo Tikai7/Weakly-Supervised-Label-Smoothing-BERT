@@ -1,4 +1,5 @@
 /__pycache__
+/model/__pycache__
 /test.ipynb
 /temp
 /data
@@ -7,3 +8,4 @@
 /params
 *.pdf
 /.venv
+*.pth
