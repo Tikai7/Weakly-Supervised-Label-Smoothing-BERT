@@ -46,7 +46,7 @@ class Trainer:
         self.model = model
         return self
     
-    def set_loader(self, train_loader : DataLoader, val_loader : DataLoader | None, test_loader : DataLoader | None):
+    def set_loader(self, train_loader : DataLoader, val_loader : DataLoader , test_loader : DataLoader ):
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
